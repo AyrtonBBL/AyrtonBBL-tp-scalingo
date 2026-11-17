@@ -160,10 +160,14 @@ Tarifs Scalingo, région standard `osc-fr1`, base 30 jours, HT :
 
 ✅ Sous le plafond du voucher Ynov (50 €/mois, 450 €/an). ⚠️ Le compte est encore en **période d'essai** (gratuite, 30 jours) : le voucher ne s'active qu'à la fin de l'essai.
 
+**Relevé réel (17/11/2026, jour du déploiement)** :
+- Compte en **période d'essai** : rien n'est facturé ; la page *Consumption* n'est pas encore disponible (rapport mis à jour chaque nuit à minuit UTC).
+- Ressources réellement en service : 1 conteneur **S** + PostgreSQL **Starter 512M**, soit exactement l'estimation (**14,40 € HT/mois**).
+- ⚠️ Scalingo crée le conteneur en **M** par défaut (14,40 € à lui seul) : passé en S juste après le premier déploiement.
+
 | Période | Consommation réelle (Billing) | Écart vs estimation |
 |---|---|---|
-| Semaine 1 | _à compléter_ | |
-| Semaine 2 | _à compléter_ | |
+| Semaine 1 | _à compléter (Consumption)_ | |
 | Fin de module | _à compléter_ | |
 
 **Fin de module** : `scalingo --region osc-fr1 --app <app> scale web:0` (ou suppression des apps + addon) pour arrêter la facturation.
@@ -213,7 +217,9 @@ scalingo --region osc-fr1 --app $API --addon postgresql backups               # 
 scalingo --region osc-fr1 --app $API --addon postgresql backups-download      # télécharger la dernière (.tar.gz)
 scalingo --region osc-fr1 --app $API --addon postgresql backups-download --backup <id>   # une sauvegarde précise
 ```
-Sauvegarde manuelle avant une migration risquée : dashboard de la base → **Backups** → déclencher une sauvegarde.
+Sauvegarde manuelle avant une migration risquée : dashboard de la base → **Backups** → *Trigger manual backup*.
+
+✅ **Testé le 17/11/2026** : la base venait d'être créée, la liste était vide (`backups` → tableau vide) ; sauvegarde manuelle déclenchée depuis le dashboard → statut *Successful*, 2 Ko. Sauvegardes automatiques chaque nuit à 0h00 UTC.
 
 ### Restaurer la base
 ```bash
@@ -224,8 +230,13 @@ pg_restore --clean --if-exists --no-owner --no-privileges --no-comments \
   --dbname "postgresql://<user>:<password>@127.0.0.1:10000/<db>" <fichier>.pgsql
 ```
 
-### Métriques
-Onglet **Metrics** de chaque app (mémoire et CPU), ou `scalingo --region osc-fr1 --app $API stats --stream`. Si la mémoire reste sous ~70 % des 256 Mo, la taille S suffit.
+### Métriques (relevé du 17/11/2026)
+Onglet **Metrics** de l'app, ou `scalingo --region osc-fr1 --app notes-ayrton-api stats --stream`.
+- **CPU** : ~0 % en moyenne (pics brefs pendant les déploiements).
+- **Mémoire** : très en dessous de la limite de 256 Mo du conteneur S.
+- **Temps de réponse** : médiane de quelques ms ; pics de 300 à 550 ms uniquement au premier appel après un redémarrage.
+- **Base** : 242 Mo de RAM sur 512, 2 connexions sur 30, 174 Mo de disque sur 10 Go.
+→ **La taille S suffit**, aucune raison de passer en M.
 
 ### Problèmes fréquents
 | Symptôme | Cause probable | Solution |
