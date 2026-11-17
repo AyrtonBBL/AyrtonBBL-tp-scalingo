@@ -181,10 +181,19 @@ scalingo --region osc-fr1 --app $API --addon <addon-id> logs --lines 200   # log
 scalingo --region osc-fr1 --app $API deployments                 # historique des déploiements
 ```
 
-**Erreur provoquée volontairement (exercice)** : `scalingo --region osc-fr1 --app $API env-set JWT_SECRET=trop-court`
-→ symptôme : l'app ne démarre plus (le site renvoie une erreur Scalingo) ;
-→ diagnostic : `scalingo --region osc-fr1 --app $API logs --lines 200` montre une `ValidationError` pydantic sur `jwt_secret` (32 caractères minimum) ;
-→ correction : remettre un secret valide avec `env-set` (redémarrage automatique). Les sessions ouvertes sont invalidées, il faut se reconnecter.
+**Erreur provoquée volontairement (testée le 17/11/2026)** : secret JWT invalide.
+```bash
+scalingo --region osc-fr1 --app notes-ayrton-api env-set JWT_SECRET=trop-court
+scalingo --region osc-fr1 --app notes-ayrton-api restart      # env-set via la CLI ne redémarre pas tout seul
+```
+→ **observation** : le nouveau conteneur plante au démarrage, mais Scalingo garde l'ancien en service (redémarrage sans coupure) : les visiteurs ne voient rien, `/health` reste à 200 ;
+→ **diagnostic** : `scalingo --region osc-fr1 --app notes-ayrton-api logs --lines 50` affiche `pydantic_core.ValidationError: 1 validation error for Settings — jwt_secret: String should have at least 32 characters` : la validation de la configuration au démarrage a bloqué un secret trop faible ;
+→ **correction** :
+```bash
+scalingo --region osc-fr1 --app notes-ayrton-api env-set JWT_SECRET="$(openssl rand -base64 48)"
+scalingo --region osc-fr1 --app notes-ayrton-api restart
+```
+→ **vérification** : les logs montrent `Uvicorn running on http://0.0.0.0:<port>`, l'ancien conteneur s'arrête proprement (code 143 = arrêt normal), `/health` → `{"status":"ok","database":"up"}`. Les sessions ouvertes sont invalidées (nouveau secret) : il faut se reconnecter.
 
 ### Revenir à une version précédente (rollback)
 Le déploiement suit Git, donc le rollback passe par Git :
