@@ -4,10 +4,9 @@ Application de prise de notes avec comptes utilisateurs, déployée sur Scalingo
 
 | | URL |
 |---|---|
-| 🌐 Client | `https://<app-client>.osc-fr1.scalingo.io` |
-| ⚙️ API | `https://<app-api>.osc-fr1.scalingo.io` — doc Swagger sur `/docs`, santé sur `/health` |
+| 🌐 Client | https://notes-ayrton-client.osc-fr1.scalingo.io |
+| ⚙️ API | https://notes-ayrton-api.osc-fr1.scalingo.io — doc Swagger sur [`/docs`](https://notes-ayrton-api.osc-fr1.scalingo.io/docs), santé sur [`/health`](https://notes-ayrton-api.osc-fr1.scalingo.io/health) |
 
-> Remplacer `<app-client>` / `<app-api>` par les noms de vos apps (ex. `notes-ayrton-client`, `notes-ayrton-api`).
 
 ---
 
