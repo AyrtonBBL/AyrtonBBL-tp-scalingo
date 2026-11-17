@@ -18,7 +18,7 @@ export default function AuthPage({ mode }: { mode: "login" | "register" }) {
       if (!isLogin) await api.register(email, password);
       const { access_token } = await api.login(email, password);
       auth.set(access_token);
-      navigate("/notes");
+      navigate("/mes-notes");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
@@ -45,11 +45,11 @@ export default function AuthPage({ mode }: { mode: "login" | "register" }) {
       <p className="muted">
         {isLogin ? (
           <>
-            Pas de compte ? <Link to="/register">Inscription</Link>
+            Pas de compte ? <Link to="/inscription">Inscription</Link>
           </>
         ) : (
           <>
-            Déjà inscrit ? <Link to="/login">Connexion</Link>
+            Déjà inscrit ? <Link to="/connexion">Connexion</Link>
           </>
         )}
       </p>

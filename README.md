@@ -4,24 +4,33 @@ Application de prise de notes avec comptes utilisateurs, déployée sur Scalingo
 
 | | URL |
 |---|---|
-| 🌐 Client | https://notes-ayrton-client.osc-fr1.scalingo.io |
-| ⚙️ API | https://notes-ayrton-api.osc-fr1.scalingo.io — doc Swagger sur [`/docs`](https://notes-ayrton-api.osc-fr1.scalingo.io/docs), santé sur [`/health`](https://notes-ayrton-api.osc-fr1.scalingo.io/health) |
+| 🌐 Application (client React) | https://notes-ayrton-api.osc-fr1.scalingo.io |
+| ⚙️ API | même domaine — doc Swagger sur [`/docs`](https://notes-ayrton-api.osc-fr1.scalingo.io/docs), santé sur [`/health`](https://notes-ayrton-api.osc-fr1.scalingo.io/health) |
 
 
 ---
 
-## 1. Architecture
+## 1. Architecture — variante « une seule app » (justification)
 
 ```mermaid
 flowchart LR
-    U[Navigateur] -- HTTPS : pages --> C["App 1 · client React<br/>buildpack Node.js · serve -s dist"]
-    U -- HTTPS : fetch JSON --> A["App 2 · API FastAPI<br/>buildpack Python · uvicorn sur $PORT"]
+    U[Navigateur] -- "HTTPS : pages + assets React" --> A
+    U -- "HTTPS : fetch JSON (/auth, /notes)" --> A["App unique notes-ayrton-api<br/>buildpack Node.js (build React)<br/>+ buildpack Python (uvicorn sur $PORT)"]
     A -- SQL --> D[("Addon PostgreSQL<br/>Starter 512")]
 ```
 
-- **Monorepo** : `client/` et `api/` dans le même dépôt ; chaque app Scalingo pointe sur son dossier via `PROJECT_DIR`.
-- Le navigateur charge le client (app 1) puis appelle **directement** l'API (app 2). Seule l'API parle à la base.
-- **CORS** : l'API n'accepte que l'origine du client (`CORS_ORIGINS`), jamais `*`.
+Le sujet accepte cette variante : **l'API sert elle-même le build React**. Choix retenu parce que :
+1. **Contrainte de compte** : en période d'essai, Scalingo n'autorise qu'**une seule application** (« You cannot create more apps while in free trial ») ; sortir de l'essai impose de saisir un profil de facturation, ce que nous n'avons pas fait sur consigne de l'enseignant.
+2. **Coût** : un seul conteneur S au lieu de deux → 14,40 € HT/mois au lieu de 21,60 €.
+3. **Sécurité** : client et API sur la **même origine** → aucun appel cross-origin ; le CORS reste configuré (restreint à cette origine) mais n'est plus sollicité.
+
+Fonctionnement :
+- `.buildpacks` (racine) enchaîne **Node.js puis Python** ; le dernier listé (Python) démarre l'app.
+- Le buildpack Node.js lance le script `build` du `package.json` racine → `client/dist`.
+- Le buildpack Python installe `requirements.txt` (racine, qui inclut `api/requirements.txt`) ; le `Procfile` racine lance uvicorn depuis `api/`.
+- FastAPI sert `client/dist` : `/assets/*` en statique, et toute autre URL inconnue renvoie `index.html` (routage côté client, pas de 404 au rafraîchissement). Les routes de l'API sont déclarées avant et restent prioritaires.
+- Pour éviter les collisions, les pages React utilisent `/connexion`, `/inscription`, `/mes-notes` (l'API garde `/auth/*`, `/notes`, `/health`, `/docs`).
+- Le mode « deux apps » reste possible sans changer le code : `PROJECT_DIR=api` d'un côté (`api/Procfile`), `PROJECT_DIR=client` de l'autre (`npm start` = `serve -s dist`).
 - **Pas de disque** : le conteneur est éphémère, toutes les données sont dans PostgreSQL. SQLite est refusé au démarrage.
 - **Schéma** géré par Alembic : `postdeploy: alembic upgrade head` rejoue les migrations après chaque déploiement (aucun `create_all`).
 - **Auth** : inscription / connexion, mot de passe haché (bcrypt), jeton JWT signé avec `JWT_SECRET`.
@@ -42,6 +51,11 @@ flowchart LR
 │   ├── public/serve.json     # cache des assets
 │   └── .env.example
 ├── .github/workflows/        # CI : api.yml, client.yml (déclenchées par dossier)
+├── .buildpacks               # Node.js puis Python (variante une seule app)
+├── Procfile                  # web + postdeploy (lancés depuis api/)
+├── package.json              # script build → client/dist
+├── requirements.txt          # -r api/requirements.txt
+├── .python-version
 └── docker-compose.yml        # PostgreSQL local
 ```
 
@@ -81,37 +95,25 @@ npm run dev                              # http://localhost:5173
 2. CLI installée : `curl -O https://cli-dl.scalingo.com/install && bash install`, puis `scalingo login` et `scalingo keys-add "Mon PC" ~/.ssh/id_ed25519.pub`.
 3. Dépôt poussé sur GitHub.
 
-### 3.1 API + base
+### 3.1 Application unique + base
 ```bash
-API=notes-ayrton-api
-CLIENT=notes-ayrton-client
+APP=notes-ayrton-api
 
-scalingo create $API --region osc-fr1
-scalingo --app $API addons-add postgresql postgresql-starter-512
-scalingo --app $API env-set \
-  PROJECT_DIR=api \
+scalingo create $APP --region osc-fr1
+scalingo --app $APP addons-add postgresql postgresql-starter-512
+scalingo --app $APP env-set \
   JWT_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" \
-  CORS_ORIGINS=https://$CLIENT.osc-fr1.scalingo.io
+  VITE_API_URL=https://$APP.osc-fr1.scalingo.io \
+  CORS_ORIGINS=https://$APP.osc-fr1.scalingo.io
 ```
-Lier au dépôt GitHub (dashboard → **Deploy → GitHub**, branche `main`, **Auto Deploy** activé), puis lancer le premier déploiement. Ensuite :
+⚠️ **Pas de `PROJECT_DIR`** : le build part de la racine (`.buildpacks`). `VITE_API_URL` doit exister **avant** le build (Vite la fige dans le bundle).
+
+Lier au dépôt GitHub (dashboard → **Deploy → Configuration → GitHub**, branche `main`, **Automatic deploys** activé), puis **Manual deployment** pour le premier déploiement. Ensuite :
 ```bash
-scalingo --app $API scale web:1:S
-scalingo --app $API run --env SEED_PASSWORD='<mot-de-passe-demo>' python seed.py   # une seule fois
-curl https://$API.osc-fr1.scalingo.io/health   # → {"status":"ok","database":"up"}
+scalingo --app $APP scale web:1:S          # Scalingo crée le conteneur en M par défaut
+scalingo --app $APP run --env SEED_PASSWORD='<mot-de-passe-demo>' python api/seed.py   # une seule fois
 ```
-
-### 3.2 Client
-```bash
-scalingo create $CLIENT --region osc-fr1
-scalingo --app $CLIENT env-set \
-  PROJECT_DIR=client \
-  VITE_API_URL=https://$API.osc-fr1.scalingo.io     # AVANT le déploiement : figée au build
-```
-Lier au même dépôt (branche `main`, Auto Deploy), déployer, puis `scalingo --app $CLIENT scale web:1:S`.
-
-Scalingo exécute `npm run build` puis `npm start` (`serve -s dist` sur `$PORT`). Le mode `-s` renvoie `index.html` pour toute URL inconnue : rafraîchir `/notes` ne donne pas de 404.
-
-> ⚠️ Changer `VITE_API_URL` impose un **redéploiement** du client (la valeur est gravée dans le bundle).
+Vérifications : `https://$APP.osc-fr1.scalingo.io/health` → `{"status":"ok","database":"up"}` ; `/docs` → Swagger ; `/mes-notes` rafraîchi → page React (pas de 404).
 
 ### 3.3 Déploiement continu
 - Un `push` sur `main` déploie automatiquement l'app concernée.
@@ -125,17 +127,15 @@ Scalingo exécute `npm run build` puis `npm start` (`serve -s dist` sur `$PORT`)
 
 | App | Variable | Rôle |
 |---|---|---|
-| API | `PROJECT_DIR` | `api` — dossier de l'app dans le monorepo |
 | API | `SCALINGO_POSTGRESQL_URL` | Fournie automatiquement par l'addon (`postgres://` converti en `postgresql+psycopg://` par le code) |
 | API | `DATABASE_URL` | Utilisée en local uniquement (même rôle) |
 | API | `JWT_SECRET` | Clé de signature des jetons (≥ 32 caractères, aléatoire) |
 | API | `JWT_EXPIRE_MINUTES` | Durée de validité du jeton (défaut 60) |
-| API | `CORS_ORIGINS` | URL(s) publique(s) du client, séparées par des virgules |
+| API | `CORS_ORIGINS` | URL publique du client (ici la même que l'API) |
+| API | `VITE_API_URL` | URL publique de l'API, lue au **build** du client (ici la même app) |
 | API | `SEED_EMAIL` / `SEED_PASSWORD` | Compte démo créé par `seed.py` (passé à `scalingo run --env`) |
 | API | `PORT` | Fourni par Scalingo |
-| Client | `PROJECT_DIR` | `client` |
-| Client | `VITE_API_URL` | URL publique de l'API (figée au build) |
-| Client | `PORT` | Fourni par Scalingo |
+| _(mode 2 apps)_ | `PROJECT_DIR` | `api` ou `client` — inutile en variante une seule app |
 
 Aucune valeur secrète n'est dans Git : seuls les `.env.example` sont versionnés.
 
@@ -147,12 +147,13 @@ Tarifs Scalingo, région standard `osc-fr1`, base 30 jours, HT :
 
 | Ressource | Taille | Estimation / mois |
 |---|---|---|
-| App client | 1 conteneur S (256 Mo) | 7,20 € |
-| App API | 1 conteneur S (256 Mo) | 7,20 € |
+| App unique (client + API) | 1 conteneur S (256 Mo) | 7,20 € |
 | PostgreSQL | Starter 512 (512 Mo, 10 Go) | 7,20 € |
-| **Total** | | **21,60 € HT ≈ 25,92 € TTC** |
+| **Total** | | **14,40 € HT ≈ 17,28 € TTC** |
 
-✅ Sous le plafond du voucher Ynov (50 €/mois, 450 €/an).
+(La variante à deux apps coûterait 21,60 € HT : un conteneur S de plus.)
+
+✅ Sous le plafond du voucher Ynov (50 €/mois, 450 €/an). ⚠️ Le compte est encore en **période d'essai** (gratuite, 30 jours) : le voucher ne s'active qu'à la fin de l'essai.
 
 | Période | Consommation réelle (Billing) | Écart vs estimation |
 |---|---|---|
@@ -160,7 +161,7 @@ Tarifs Scalingo, région standard `osc-fr1`, base 30 jours, HT :
 | Semaine 2 | _à compléter_ | |
 | Fin de module | _à compléter_ | |
 
-**Fin de module** : `scalingo --app <app> scale web:0` sur les deux apps (ou suppression des apps + addon) pour arrêter la facturation.
+**Fin de module** : `scalingo --app <app> scale web:0` (ou suppression des apps + addon) pour arrêter la facturation.
 
 ---
 
@@ -170,16 +171,15 @@ Tarifs Scalingo, région standard `osc-fr1`, base 30 jours, HT :
 ```bash
 scalingo --app $API logs --lines 200            # API (inclut le postdeploy / Alembic)
 scalingo --app $API logs -f                     # en continu
-scalingo --app $CLIENT logs --lines 200         # client
 scalingo --app $API addons                      # récupérer l'ID de l'addon PostgreSQL
 scalingo --app $API --addon <addon-id> logs --lines 200   # logs de la base
 scalingo --app $API deployments                 # historique des déploiements
 ```
 
-**Erreur provoquée volontairement (exercice)** : `scalingo --app $API env-set CORS_ORIGINS=https://mauvaise-url.example`
-→ symptôme : le client affiche « Failed to fetch » et l'onglet Réseau montre une erreur CORS ;
-→ diagnostic : `curl -I -X OPTIONS https://$API.osc-fr1.scalingo.io/notes -H "Origin: https://$CLIENT.osc-fr1.scalingo.io" -H "Access-Control-Request-Method: GET"` ne renvoie pas d'en-tête `access-control-allow-origin` ;
-→ correction : remettre la bonne valeur avec `env-set` (redémarrage automatique).
+**Erreur provoquée volontairement (exercice)** : `scalingo --app $API env-set JWT_SECRET=trop-court`
+→ symptôme : l'app ne démarre plus (le site renvoie une erreur Scalingo) ;
+→ diagnostic : `scalingo --app $API logs --lines 200` montre une `ValidationError` pydantic sur `jwt_secret` (32 caractères minimum) ;
+→ correction : remettre un secret valide avec `env-set` (redémarrage automatique). Les sessions ouvertes sont invalidées, il faut se reconnecter.
 
 ### Revenir à une version précédente (rollback)
 Le déploiement suit Git, donc le rollback passe par Git :
@@ -216,9 +216,10 @@ Onglet **Metrics** de chaque app (mémoire et CPU), ou `scalingo --app $API stat
 ### Problèmes fréquents
 | Symptôme | Cause probable | Solution |
 |---|---|---|
-| Build API : `requirements.txt not found` | `PROJECT_DIR` absent | `env-set PROJECT_DIR=api` |
+| Build : `requirements.txt not found` | `PROJECT_DIR` défini par erreur, ou `requirements.txt` racine absent | Supprimer `PROJECT_DIR` (variante une seule app) |
 | `/health` → 503 | Base injoignable | Vérifier l'addon et `SCALINGO_POSTGRESQL_URL` |
 | `relation "users" does not exist` | Migrations non jouées | Vérifier le process `postdeploy` dans les logs ; `scalingo run alembic upgrade head` |
 | Client appelle `localhost` | `VITE_API_URL` définie après le build | La définir puis redéployer |
+| `/mes-notes` renvoie du JSON ou 404 | `client/dist` absent : build Node.js non exécuté | Vérifier `.buildpacks` et les logs de build |
 | Erreur CORS | `CORS_ORIGINS` ≠ URL du client | Corriger (sans `/` final) |
 | Boot timeout | Process qui n'écoute pas sur `$PORT` | Vérifier le `Procfile` / le script `start` |

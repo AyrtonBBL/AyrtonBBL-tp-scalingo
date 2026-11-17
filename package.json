@@ -1,0 +1,11 @@
+{
+  "name": "notes-monorepo",
+  "private": true,
+  "description": "Variante une seule app : le buildpack Node.js construit client/, puis le buildpack Python lance l'API qui sert client/dist.",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "build": "npm --prefix client ci --include=dev && npm --prefix client run build"
+  }
+}

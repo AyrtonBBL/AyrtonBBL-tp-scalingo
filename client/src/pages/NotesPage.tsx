@@ -12,7 +12,7 @@ export default function NotesPage() {
   function handleError(err: unknown) {
     if (err instanceof ApiError && err.status === 401) {
       auth.clear();
-      navigate("/login");
+      navigate("/connexion");
       return;
     }
     setError(err instanceof Error ? err.message : "Erreur inconnue");
@@ -45,7 +45,7 @@ export default function NotesPage() {
 
   function logout() {
     auth.clear();
-    navigate("/login");
+    navigate("/connexion");
   }
 
   return (
