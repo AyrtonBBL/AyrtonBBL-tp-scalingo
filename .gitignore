@@ -1,0 +1,23 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Node / Vite
+node_modules/
+dist/
+
+# Python
+__pycache__/
+.venv/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Dumps de base (ne jamais committer)
+*.pgsql
+*.dump
+*.tar.gz
+
+# Divers
+.DS_Store
