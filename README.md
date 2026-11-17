@@ -92,16 +92,21 @@ npm run dev                              # http://localhost:5173
 
 ### 3.0 Prérequis (une seule fois)
 1. Voucher Ynov récupéré sur `partners.learn.ynov.com`, compte Scalingo créé, voucher activé dans **Billing → Voucher** (mettre fin à la période d'essai pour l'activer).
-2. CLI installée : `curl -O https://cli-dl.scalingo.com/install && bash install`, puis `scalingo login` et `scalingo keys-add "Mon PC" ~/.ssh/id_ed25519.pub`.
+2. CLI installée : `curl -O https://cli-dl.scalingo.com/install && bash install` (Linux/macOS ; sous Windows : télécharger `scalingo_*_windows_amd64.zip` depuis les releases GitHub de Scalingo/cli et placer `scalingo.exe` dans `~/bin`), puis `scalingo login` et `scalingo keys-add "Mon PC" ~/.ssh/id_ed25519.pub`.
 3. Dépôt poussé sur GitHub.
+
+> 💡 **Testé sous Windows (Git Bash)** :
+> - compte Scalingo créé via GitHub → pas de mot de passe : se connecter avec un jeton (dashboard → Account → API tokens) : `scalingo login --api-token <jeton>` ;
+> - sans région, la CLI interroge toutes les régions et reste bloquée : toujours passer `--region osc-fr1` (ou `scalingo config --region osc-fr1` une fois) ;
+> - si une commande interactive (`run`, `db-tunnel`) reste figée, la préfixer par `winpty`.
 
 ### 3.1 Application unique + base
 ```bash
 APP=notes-ayrton-api
 
 scalingo create $APP --region osc-fr1
-scalingo --app $APP addons-add postgresql postgresql-starter-512
-scalingo --app $APP env-set \
+scalingo --region osc-fr1 --app $APP addons-add postgresql postgresql-starter-512
+scalingo --region osc-fr1 --app $APP env-set \
   JWT_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" \
   VITE_API_URL=https://$APP.osc-fr1.scalingo.io \
   CORS_ORIGINS=https://$APP.osc-fr1.scalingo.io
@@ -110,8 +115,8 @@ scalingo --app $APP env-set \
 
 Lier au dépôt GitHub (dashboard → **Deploy → Configuration → GitHub**, branche `main`, **Automatic deploys** activé), puis **Manual deployment** pour le premier déploiement. Ensuite :
 ```bash
-scalingo --app $APP scale web:1:S          # Scalingo crée le conteneur en M par défaut
-scalingo --app $APP run --env SEED_PASSWORD='<mot-de-passe-demo>' python api/seed.py   # une seule fois
+scalingo --region osc-fr1 --app $APP scale web:1:S          # Scalingo crée le conteneur en M par défaut
+scalingo --region osc-fr1 --app $APP run --env SEED_PASSWORD='<mot-de-passe-demo>' python api/seed.py   # une seule fois
 ```
 Vérifications : `https://$APP.osc-fr1.scalingo.io/health` → `{"status":"ok","database":"up"}` ; `/docs` → Swagger ; `/mes-notes` rafraîchi → page React (pas de 404).
 
@@ -161,7 +166,7 @@ Tarifs Scalingo, région standard `osc-fr1`, base 30 jours, HT :
 | Semaine 2 | _à compléter_ | |
 | Fin de module | _à compléter_ | |
 
-**Fin de module** : `scalingo --app <app> scale web:0` (ou suppression des apps + addon) pour arrêter la facturation.
+**Fin de module** : `scalingo --region osc-fr1 --app <app> scale web:0` (ou suppression des apps + addon) pour arrêter la facturation.
 
 ---
 
@@ -169,16 +174,16 @@ Tarifs Scalingo, région standard `osc-fr1`, base 30 jours, HT :
 
 ### Lire les logs
 ```bash
-scalingo --app $API logs --lines 200            # API (inclut le postdeploy / Alembic)
-scalingo --app $API logs -f                     # en continu
-scalingo --app $API addons                      # récupérer l'ID de l'addon PostgreSQL
-scalingo --app $API --addon <addon-id> logs --lines 200   # logs de la base
-scalingo --app $API deployments                 # historique des déploiements
+scalingo --region osc-fr1 --app $API logs --lines 200            # API (inclut le postdeploy / Alembic)
+scalingo --region osc-fr1 --app $API logs -f                     # en continu
+scalingo --region osc-fr1 --app $API addons                      # récupérer l'ID de l'addon PostgreSQL
+scalingo --region osc-fr1 --app $API --addon <addon-id> logs --lines 200   # logs de la base
+scalingo --region osc-fr1 --app $API deployments                 # historique des déploiements
 ```
 
-**Erreur provoquée volontairement (exercice)** : `scalingo --app $API env-set JWT_SECRET=trop-court`
+**Erreur provoquée volontairement (exercice)** : `scalingo --region osc-fr1 --app $API env-set JWT_SECRET=trop-court`
 → symptôme : l'app ne démarre plus (le site renvoie une erreur Scalingo) ;
-→ diagnostic : `scalingo --app $API logs --lines 200` montre une `ValidationError` pydantic sur `jwt_secret` (32 caractères minimum) ;
+→ diagnostic : `scalingo --region osc-fr1 --app $API logs --lines 200` montre une `ValidationError` pydantic sur `jwt_secret` (32 caractères minimum) ;
 → correction : remettre un secret valide avec `env-set` (redémarrage automatique). Les sessions ouvertes sont invalidées, il faut se reconnecter.
 
 ### Revenir à une version précédente (rollback)
@@ -190,28 +195,28 @@ git push origin main                 # CI verte → redéploiement automatique
 ```
 Alternative immédiate (sans attendre la CI) : dashboard → **Deploy → Manual deploy** d'une branche pointant sur le dernier commit sain.
 
-⚠️ Si la version fautive contenait une migration, la défaire d'abord : `scalingo --app $API run alembic downgrade -1`.
+⚠️ Si la version fautive contenait une migration, la défaire d'abord : `scalingo --region osc-fr1 --app $API run alembic downgrade -1`.
 
 ### Sauvegarder la base
 Les sauvegardes automatiques sont incluses dans l'addon (onglet **Backups** du dashboard de la base).
 ```bash
-scalingo --app $API --addon postgresql backups               # lister
-scalingo --app $API --addon postgresql backups-download      # télécharger la dernière (.tar.gz)
-scalingo --app $API --addon postgresql backups-download --backup <id>   # une sauvegarde précise
+scalingo --region osc-fr1 --app $API --addon postgresql backups               # lister
+scalingo --region osc-fr1 --app $API --addon postgresql backups-download      # télécharger la dernière (.tar.gz)
+scalingo --region osc-fr1 --app $API --addon postgresql backups-download --backup <id>   # une sauvegarde précise
 ```
 Sauvegarde manuelle avant une migration risquée : dashboard de la base → **Backups** → déclencher une sauvegarde.
 
 ### Restaurer la base
 ```bash
 tar -xzf <backup>.tar.gz                                     # → fichier .pgsql
-scalingo --app $API db-tunnel SCALINGO_POSTGRESQL_URL        # terminal 1 : tunnel sur localhost:10000
-# terminal 2 : reprendre user/mot de passe/nom de base de `scalingo --app $API env | grep SCALINGO_POSTGRESQL_URL`
+scalingo --region osc-fr1 --app $API db-tunnel SCALINGO_POSTGRESQL_URL        # terminal 1 : tunnel sur localhost:10000
+# terminal 2 : reprendre user/mot de passe/nom de base de `scalingo --region osc-fr1 --app $API env | grep SCALINGO_POSTGRESQL_URL`
 pg_restore --clean --if-exists --no-owner --no-privileges --no-comments \
   --dbname "postgresql://<user>:<password>@127.0.0.1:10000/<db>" <fichier>.pgsql
 ```
 
 ### Métriques
-Onglet **Metrics** de chaque app (mémoire et CPU), ou `scalingo --app $API stats --stream`. Si la mémoire reste sous ~70 % des 256 Mo, la taille S suffit.
+Onglet **Metrics** de chaque app (mémoire et CPU), ou `scalingo --region osc-fr1 --app $API stats --stream`. Si la mémoire reste sous ~70 % des 256 Mo, la taille S suffit.
 
 ### Problèmes fréquents
 | Symptôme | Cause probable | Solution |
